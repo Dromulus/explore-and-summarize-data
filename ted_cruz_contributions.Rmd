@@ -1,0 +1,235 @@
+---
+title: "Current Election Contributions, 2016"
+author: "Kevin Palm"
+date: "June 11, 2015"
+output: html_document
+---
+
+The data set analyzed in this project was the Federal Election Commission 2016 Presidential Campaign Finance data set corresponding to all states, available for download here: <http://fec.gov/disclosurep/PDownload.do>. At the time of this project's creation, the data set only contained contribution information pertaining to one candidate, Republican Rafael Edward Ted Cruz.
+
+Before importing to R, the data set needed to be formatted such that there were no repeat column header names. This was done by reading the .csv into a Python pandas data frame, then rewriting the .csv.
+
+## 'Stream-of-Consciousness' Analysis and Exploration of the Data
+
+### Analysis Preparations
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+
+us = read.csv('/home/kevin/Documents/projects/Udacity/Project_3/project/US.csv')
+us$contb_receipt_dt = as.Date(us$contb_receipt_dt, format = '%d-%b-%y')
+us$contbr_zip = as.factor(us$contbr_zip)
+
+```
+
+### Basic Exploration
+
+The project began with some basic exploration of the data set without much prior data cleaning or subsetting. 
+
+__Total Observations__
+
+```{r}
+nrow(us)
+```
+
+Ted Cruz had over 2000 contributions recorded in this data file.
+
+__States Represented__
+
+```{r}
+unique(us$contbr_st)
+```
+
+All 50 US states had contributions recorded. In addition, there were three variables included which are not states - 'AP', 'DC', and 'XX'.
+
+__Contribution Amounts__
+
+```{r}
+qplot(data = us, x = contb_receipt_amt, binwidth = 250)
+```
+
+There were instances of negative contribution amounts within the data set. Presumably these are refunds to individuals who contributed beyond the legal limit.
+
+__Contribution Dates__
+
+```{r}
+qplot(data = us, x = contb_receipt_dt, binwidth = 1)
+```
+
+The date range within this data set was `r min(us$contb_receipt_dt)` through `r max(us$contb_receipt_dt)`.
+
+### Exploration Using Subsets and Two Variables###
+
+__Amounts vs. Dates__
+
+```{r}
+qplot(data = us, x = contb_receipt_dt, y = contb_receipt_amt)
+```
+
+I replotted contribution dates, this time with price on the y-axis. The vast majority of the data points and contributed funds being located on or after March 23rd makes sense, as this was the day that the Texas senator officially announced his presidential run. At first I thought the distribution looked strangely patterned, perhaps even suspicious. Later I realized that some of the more 'regular' numbers which contributors choose to contribute were just occurring daily.
+
+__Amounts vs. Dates Subset__
+
+The later potion of the data set looked interesting to me - the week after the announced presidential run - so I focused briefly on that. I introduced a jitter effect to make more clear which amounts were most commonly contributed.
+
+```{r}
+ggplot(data = us, aes(x = contb_receipt_dt, y = contb_receipt_amt)) + geom_jitter(alpha = 1/5, h = 0, w = 1) + xlim(as.Date("2015-03-23"), max(us$contb_receipt_dt))
+```
+
+__Individuals' Sum Contributions__
+
+Next I decided I was interested in the individuals' sum contributions to the campaign. I also created a new variable to indicate whether contributors are from Texas.
+
+```{r}
+#Create field for whether the contribution came from someone living in Texas
+us$contbr_tx = ifelse(us$contbr_st == 'TX', 'Texas', 'Other')
+us$contbr_tx = factor(us$contbr_tx)
+#Aggregate by name and whether from Texas, save in new dataframe
+us.sc = aggregate(x = us$contb_receipt_amt, by = list(us$contbr_nm, us$contbr_tx), FUN = sum)
+#Plot new dataframe
+qplot(data = us.sc, x = x, color = Group.2, main = 'Contributor Sum Contributions', binwidth = 100) + scale_x_continuous(breaks = c(100, 500, 1000, 2700, 5400, 10800))
+```
+
+[$5400 is the legal limit which individuals may contribute for the 2015-2016 election](http://www.insidepoliticallaw.com/2015/02/02/fec-increases-contribution-limits-permitting-individuals-to-contribute-over-800k-to-national-party-committees/). 111 individuals in this data set donated above the legal limit, five of which each had a total of $18900 in contributions attributed to them before accounting for refunds. With refunds added in, it looks like all contributors were returned to a maximum of $10800, which is the legal limit for a couple.
+
+
+```{r}
+#Create new dataframe without refunds included
+us.cc = subset(us, us$contb_receipt_amt > 0)
+#Aggregate by contributor name
+us.cc = aggregate(x = us.cc$contb_receipt_amt, by = list(us.cc$contbr_nm), FUN = length)
+us.cc$x = as.factor(us.cc$x)
+#Plot
+qplot(data = us.cc, x = x, main = 'Count of Contribtions per Contributor')
+```
+
+For the most part, the contributors gave only one time within this data set.
+
+__Top Employer Sum Contributions__
+
+```{r}
+#Aggregate by employer and whether from Texas, save to new data frame
+us.ec = aggregate(x = us$contb_receipt_amt, by = list(us$contbr_employer, us$contbr_tx), FUN = sum)
+#Only keep contributions which are creater than the legal limit for a couple
+us.ec = subset(us.ec, us.ec$x > 10800)
+us.ec$x = as.factor(us.ec[with(us.ec, order(x)), ]$x)
+#Plot
+qplot(data = us.ec, x = Group.1, y = x, color = Group.2)
+us.ec
+```
+
+For the most, the employer types which contributed more than $10,800 were classifications such as 'self employed' or 'retired'. There was one actual company from outside of Texas, and nine from Texas.
+
+__Cumulative Contributions by Occupation Over Time__
+
+```{r}
+#Ensure all subsets have at least two individuals
+us.oc = aggregate(x = us$contbr_occupation, by = list(us$contbr_nm, us$contbr_occupation), FUN = length)
+us.oc = aggregate(x = us.oc$Group.2, by = list(us.oc$Group.2), FUN = length)
+us.oc = subset(us.oc, us.oc$x > 1)
+us.oc$Group.1 = factor(us.oc$Group.1)
+#Sample
+set.seed(8902)
+sample.ids = sample(levels(us.oc$Group.1), 16)
+sample = subset(us, contbr_occupation %in% sample.ids)
+#Sum contributions by group over time
+sum_to_date = function(x) sample$sum_date = sum(subset(sample$contb_receipt_amt, sample$contb_receipt_dt <= x[12] & sample$contbr_tx == x[20] & sample$contbr_occupation == x[10]))
+sample$sum_date = apply(sample, 1, sum_to_date)
+#Plot
+ggplot(data = sample, aes(x = contb_receipt_dt, y = sum_date, group = contbr_tx, color = contbr_tx)) + geom_point() + geom_line() + facet_wrap(~contbr_occupation, scales = 'free')
+```
+
+I thought it might be interesting to see how separate professions contributed together over time. There were 121 occupations listed with at least two individuals, so I sampled and plotted a few times.
+
+```{r}
+#Sample, sum contributions by group over time, plot
+set.seed(5892)
+sample.ids = sample(levels(us.oc$Group.1), 16)
+sample = subset(us, contbr_occupation %in% sample.ids)
+sum_to_date = function(x) sample$sum_date = sum(subset(sample$contb_receipt_amt, sample$contb_receipt_dt <= x[12] & sample$contbr_tx == x[20] & sample$contbr_occupation == x[10]))
+sample$sum_date = apply(sample, 1, sum_to_date)
+ggplot(data = sample, aes(x = contb_receipt_dt, y = sum_date, group = contbr_tx, color = contbr_tx)) + geom_point() + geom_line() + facet_wrap(~contbr_occupation, scales = 'free')
+```
+
+__Engineer Cumulative Contributions Over Time__
+
+Since that [Ted Cruz is the chairman of the Subcommittee on Space, Science, and Competitiveness](http://www.commerce.senate.gov/public/index.cfm?p=PressReleases&ContentRecord_id=8452ed0b-18be-4057-a376-babfd31322cb&ContentType_id=77eb43da-aa94-497d-a73f-5c951ff72372&Group_id=4b968841-f3e8-49da-a529-7b18e32fd69d&MonthDisplay=1&YearDisplay=2015), I thought it might be interesting to consolidate all the individuals with 'engineer' in their occupation label and create a similar plot.
+
+
+```{r}
+#Create new dataframe including only contributions from contributors with 'engineer' in their occupation label
+us.eg = us[grep('ENGINEER', us$contbr_occupation), ]
+#Sum contributions by group over time
+sum_to_date = function(x) us.eg$sum_date = sum(subset(us.eg$contb_receipt_amt, us.eg$contb_receipt_dt <= x[12] & us.eg$contbr_tx == x[20]))
+us.eg$sum_date = apply(us.eg, 1, sum_to_date)
+factor(unique(us.eg$contbr_occupation))
+#Plot
+ggplot(data = us.eg, aes(x = contb_receipt_dt, y = sum_date, group = contbr_tx, color = contbr_tx)) + geom_point() + geom_line()
+```
+
+__All Cumulative Contributions Over Time__
+
+Next I created a similar plot for all the data to compare the engineer plot with.
+
+```{r}
+#Sum contributions by group over time
+sum_to_date = function(x) us$sum_date = sum(subset(us$contb_receipt_amt, us$contb_receipt_dt <= x[12] & us$contbr_tx == x[20]))
+us$sum_date = apply(us, 1, sum_to_date)
+#Plot
+ggplot(data = us, aes(x = contb_receipt_dt, y = sum_date, group = contbr_tx, color = contbr_tx)) + geom_point() + geom_line()
+```
+
+__Sum Contribution by State__
+
+Finally I compared the total contributions of each state in this data set.
+```{r}
+#Create new data frame by aggregating by state
+us.st = aggregate(x = us$contb_receipt_amt, by = list(us$contbr_st), FUN = sum)
+#Plot
+qplot(data = us.st, x = Group.1, y = x)
+```
+
+
+## Final Plots and Summary
+
+### Contributions vs. Date, Week of Run Announcement
+
+```{r echo=FALSE}
+ggplot(data = subset(us, contb_receipt_amt > 0), aes(x = contb_receipt_dt, y = contb_receipt_amt, color = contbr_tx)) + geom_jitter(alpha = 1/5, h = 0, w = 1) + scale_y_log10(breaks = c(10, 25, 50, 100, 250, 500, 1000, 2700, 5400, 10800), name = 'Dollars Contributed') + scale_x_date(name = 'Date', breaks = '1 day', limits = c(as.Date("2015-03-23"), as.Date("2015-03-29"))) + labs(title = 'Contributions by Day, First Week After Announced Run') + scale_color_discrete(name = 'State', breaks = c('Texas', 'Other'))
+```
+
+The immediate week following Ted Cruz's announcement saw contributions ranging from $10 to $10,800. Contributions tended to be in the $1,000 to $250 range, with more contributions being made earlier in the week.
+
+### Individuals' Sum Contributions
+
+```{r echo=FALSE}
+ggplot(data = us.sc, aes(x = x, color = Group.2, main = 'Contributor Sum Contributions')) + geom_freqpoly(binwidth = .05) + scale_x_log10(breaks = c(10, 25, 50, 100, 250, 500, 1000, 2700, 5400, 10800), name = 'Dollars Contributed') + scale_color_discrete(name = 'State', breaks = c('Texas', 'Other')) + labs(title = 'Contribution Size and Frequency') + scale_y_continuous(name = 'Frequency')
+```
+
+Looking at the entire data set, in general, more contributors from the combined other states gave small contributions, and more contributors from Texas gave large contributions. The tipping point was somewhere around $1000, at which point contribution frequency was about equal.
+
+### Engineers and Cumulative Contributions over Time
+
+```{r echo=FALSE}
+us.eg = us[grep('ENGINEER', us$contbr_occupation), ]
+sum_to_date = function(x) us.eg$sum_date = sum(subset(us.eg$contb_receipt_amt, us.eg$contb_receipt_dt <= x[12] & us.eg$contbr_tx == x[20]))
+us.eg$sum_date = apply(us.eg, 1, sum_to_date)
+eg.plot = ggplot(data = us.eg, aes(x = contb_receipt_dt, y = sum_date, group = contbr_tx, color = contbr_tx)) + geom_point() + geom_line() + scale_color_discrete(name = 'State', breaks = c('Texas', 'Other')) + scale_x_date(name = 'Date') + scale_y_continuous(name = 'Cumulative Dollars Contributed') + labs(title = 'Engineer Cumulative Contributions over Time')
+sum_to_date = function(x) us$sum_date = sum(subset(us$contb_receipt_amt, us$contb_receipt_dt <= x[12] & us$contbr_tx == x[20]))
+us$sum_date = apply(us, 1, sum_to_date)
+al.plot = ggplot(data = us, aes(x = contb_receipt_dt, y = sum_date, group = contbr_tx, color = contbr_tx)) + geom_point() + geom_line() + scale_color_discrete(name = 'State', breaks = c('Texas', 'Other')) + scale_x_date(name = 'Date') + scale_y_continuous(name = 'Cumulative Dollars Contributed') + labs(title = 'All Cumulative Contributions over Time')
+grid.arrange(eg.plot, al.plot)
+```
+
+Engineers from Texas contributed almost equally to engineers from other states, overall. This trend is different from the trend of the greater data set - in overall terms Texans contributed considerably more cumulatively than the contributors from the combined other states.
+
+Ted Cruz may hold greater than average appeal to engineers from outside Texas (compared with people of other occupations). An important piece of information not conveyed in these graphs is that there were almost twice as many engineers from other states (n = 43) than engineers from Texas (n = 24). This is pretty different from the much more level ratio of contributors from other states (n = 966) vs. contributors from Texas (n = 830) from the greater data set.
+
+## Reflection
+
+My biggest challenge in this data set was creating cumulative sums across the x axis when creating the occupation plots (at least this turned out to be much harder than I expected).  Even now I still suspect that there's some hidden pre-made function that does exactly what I wanted, but in this project it ended up being good practice in defining my own functions and using apply().
+
+When I first began playing with this data set there was a moment where I suspected some sort of foul play - the patterns after March 23rd seemed far too regular at strange numbers. I've since learned about this season's legal limits to individual contributions and Ted Cruz's announcement date. I'm feeling a bit more confident that there's no cheating going on in this data set, which feels like a victory.
+
+This data set will get a lot more interesting as the campaign season approaches and there's not just one candidate. In its current form, a much larger project that would be quite interesting would be to classify the different occupations listed into genres, then look into contributions across the genres. Incorporating whether individuals are from left or right leaning states would also be an interesting dimension.

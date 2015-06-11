@@ -1,0 +1,8 @@
+﻿References
+
+http://www.insidepoliticallaw.com/2015/02/02/fec-increases-contribution-limits-permitting-individuals-to-contribute-over-800k-to-national-party-committees/
+
+http://www.commerce.senate.gov/public/index.cfm?p=PressReleases&ContentRecord_id=8452ed0b-18be-4057-a376-babfd31322cb&ContentType_id=77eb43da-aa94-497d-a73f-5c951ff72372&Group_id=4b968841-f3e8-49da-a529-7b18e32fd69d&MonthDisplay=1&YearDisplay=2015
+
+http://nicercode.github.io/guides/repeating-things/
+
